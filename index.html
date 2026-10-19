@@ -103,7 +103,11 @@ button.primary{background:var(--accent);border-color:var(--accent);color:var(--a
 .slot{width:10px;height:15px;border-radius:2px;border:1px dashed var(--line)}
 .slot.f{border:1px solid rgba(0,0,0,.3)}
 
-.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto;font-size:14px}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;max-height:360px;overflow:auto;font-size:14px}
+.log .det{margin:3px 0 0;padding:0;list-style:none;font-size:13px;color:var(--muted);font-weight:400;display:flex;flex-direction:column;gap:1px}
+.log .det li{border:none!important;padding-left:0!important}
+.log .det .ok{color:var(--good);font-weight:700}
+.log .tn{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-right:6px}
 .log li{padding-left:10px;border-left:2px solid var(--line)}
 .log li.took{border-left-color:var(--good)}
 .log li.win{border-left-color:var(--accent);font-weight:700}
@@ -287,27 +291,45 @@ function winnable(origin,land){
   if(land!==origin){const lc=S.pits[land].card; if(majority(cnt,lc)) out.push({pit:land,col:lc});}
   return out;
 }
-function log(text,cls=''){S.log.unshift({text,cls}); if(S.log.length>60)S.log.pop();}
-function resolve(pi,origin,land,choicePit){
-  const p=S.players[pi], wins=winnable(origin,land);
+function log(text,cls='',det=null,tn=null){S.log.unshift({text,cls,det,tn}); if(S.log.length>60)S.log.pop();}
+const gemList=c=>{const parts=COLORS.filter(k=>c[k]).map(k=>`${c[k]} ${LOW[k]}`);const n=total(c);return parts.length?`${parts.join(', ')} (${n} gem${n===1?'':'s'})`:'no gems';};
+function resolve(pi,origin,land,choicePit,info){
+  const p=S.players[pi], wins=winnable(origin,land), cnt=S.pits[land].s, tot=total(cnt);
+  S.turnNo=(S.turnNo||0)+1;
+  const det=[];
+  if(info&&info.orig) det.push(`Picked up eye ${origin+1}: ${gemList(info.orig)}.`);
+  if(info&&info.placed&&info.placed.length) det.push(`Sowed ${info.placed.map(x=>`${LOW[x.c]} \u2192 eye ${x.p+1}`).join(', ')}.`);
+  det.push(`Last gem landed in eye ${land+1}, which now holds ${gemList(cnt)}.`);
+  const checks=[[origin,'emptied']]; if(land!==origin) checks.push([land,'landing']);
+  for(const [e,kind] of checks){
+    const col=S.pits[e].card;
+    if(!col){det.push(`Eye ${e+1} (${kind} eye) has no iris to win.`);continue;}
+    const m=cnt[col], ok=m*2>tot;
+    det.push(`${ok?'<ok>':''}Eye ${e+1}'s ${LOW[col]} iris (${kind} eye): ${m} of ${tot} gems match \u2014 ${ok?'more than half, qualifies':(m*2===tot?'exactly half, not enough':'not a majority')}.`);
+  }
   S.tok=land;
   let take=wins.find(w=>w.pit===choicePit)||wins[0]||null, text, cls='';
   if(take){
     p.cards[take.col]++; const drawn=S.pile.length?S.pile.pop():null; S.pits[take.pit].card=drawn;
     const where= take.pit===origin?`eye ${take.pit+1}, the eye ${p.bot?'it':'they'} emptied`:`eye ${take.pit+1}, where the last gem landed`;
-    text=`${p.name} took the ${LOW[take.col]} iris from ${where}.`+(drawn?'':` The pile is empty, so eye ${take.pit+1} has no iris now.`); cls='took';
+    text=`${p.name} took the ${LOW[take.col]} iris from ${where}.`; cls='took';
+    if(wins.length===2) det.push(`Both irises qualified; ${p.name} chose the ${LOW[take.col]} iris from eye ${take.pit+1}.`);
+    det.push(drawn?`Drew a ${LOW[drawn]} iris into eye ${take.pit+1}. ${S.pile.length} left in the pile.`:`The pile is empty, so eye ${take.pit+1} has no iris now.`);
     if(p.cards[take.col]>=GOAL){S.winner=pi;S.phase='over';text=`${p.name} wins with three ${LOW[take.col]} irises.`;cls='win';}
   } else {
-    text=`${p.name} sowed from eye ${origin+1} and landed in eye ${land+1}; no iris had a majority there.`;
+    text=`${p.name} sowed from eye ${origin+1} to eye ${land+1} and won no iris.`;
   }
-  log(text,cls);
+  det.push(`Loupe moved to eye ${land+1}.`);
+  const held=COLORS.filter(k=>p.cards[k]).map(k=>`${p.cards[k]} ${LOW[k]}`);
+  det.push(`${p.name} ${p.bot?'holds':(p.name==='You'?'hold':'holds')}: ${held.length?held.join(', '):'no irises yet'}.`);
+  log(text,cls,det,S.turnNo);
   if(S.phase!=='over' && S.pits.every(x=>!x.card)){S.phase='over';S.winner=null;log('No irises remain on the board. The game is a draw.','win');}
   S.last={pi,ok:!!take,text,land,origin};
   return !!take;
 }
 function placeStarling(pi,i){
   S.tok=i; const p=S.players[pi];
-  log(`${p.name} placed the loupe on eye ${i+1}.`);
+  log(`${p.name} placed the loupe on eye ${i+1}.`,'',[`Opening turn. The next player must pick up from eyes ${[-2,-1,0,1,2].map(d=>((i+d+NP)%NP)+1).join(', ')} (any of those with gems).`],0);
   S.last={pi,text:S.log[0].text};
 }
 function advance(){
@@ -392,12 +414,12 @@ function botTurn(){
   setTimeout(()=>{
     if(id!==gameId) return;
     const {o,seq,pick}=botChoose(pi); const n=seq.length, t=targetsFrom(o,n);
-    S.anim={stage:'sow',origin:o,col:S.pits[o].card,landCol:t[n-1]!==o?S.pits[t[n-1]].card:null,land:t[n-1],i:0,t}; S.pits[o].s=zero(); render();
+    S.anim={stage:'sow',orig:{...S.pits[o].s},origin:o,col:S.pits[o].card,landCol:t[n-1]!==o?S.pits[t[n-1]].card:null,land:t[n-1],i:0,t}; S.pits[o].s=zero(); render();
     const step=()=>{
       if(id!==gameId) return;
       const a=S.anim;
       if(a.i<n){S.pits[t[a.i]].s[seq[a.i]]++; a.i++; a.next=a.i<n?t[a.i]:null; a.landed=a.i===n?t[n-1]:null; render(); setTimeout(step,d.step); return;}
-      resolve(pi,o,t[n-1],pick); a.stage='done'; render();
+      resolve(pi,o,t[n-1],pick,{orig:a.orig,placed:seq.map((c,i)=>({p:t[i],c}))}); a.stage='done'; render();
       setTimeout(()=>{ if(id!==gameId) return; advance(); }, d.after);
     };
     setTimeout(step,d.step);
@@ -417,7 +439,7 @@ const nextTarget=()=>(S.turn.origin+S.turn.placed.length+1)%NP;
 function place(c){const t=S.turn;if(!t||!t.hand[c])return;const p=nextTarget();S.pits[p].s[c]++;t.placed.push({p,c});t.hand[c]--;render();}
 function undo(){const t=S.turn,u=t.placed.pop();if(!u)return;S.pits[u.p].s[u.c]--;t.hand[u.c]++;render();}
 function cancel(){const t=S.turn;while(t.placed.length)undo();S.pits[t.origin].s=t.orig;S.turn=null;S.phase='pick';render();}
-function endTurn(choicePit){const t=S.turn;resolve(S.cur,t.origin,t.placed[t.placed.length-1].p,choicePit);S.turn=null;
+function endTurn(choicePit){const t=S.turn;resolve(S.cur,t.origin,t.placed[t.placed.length-1].p,choicePit,{orig:t.orig,placed:t.placed});S.turn=null;
   if(S.phase==='over'){render();return;} advance();}
 
 /* ---------- render ---------- */
@@ -502,7 +524,7 @@ function render(){
     <div class="tally" aria-label="${COLORS.map(c=>p.cards[c]+' '+LOW[c]).join(', ')}">${COLORS.map(c=>`<span class="t">${[0,1,2].map(k=>`<span class="slot ${k<p.cards[c]?'f '+c:''}"></span>`).join('')}</span>`).join('')}</div>
     </div>`).join('');
 
-  logEl.innerHTML=S.log.length?S.log.map(l=>`<li class="${l.cls}">${esc(l.text)}</li>`).join(''):'<li class="muted">Moves will appear here.</li>';
+  logEl.innerHTML=S.log.length?S.log.map(l=>`<li class="${l.cls}">${l.tn!=null?`<span class="tn">${l.tn?'Turn '+l.tn:'Opening'}</span>`:''}${esc(l.text)}${l.det&&l.det.length?`<ul class="det">${l.det.map(d=>d.startsWith('<ok>')?`<li class="ok">${esc(d.slice(4))}</li>`:`<li>${esc(d)}</li>`).join('')}</ul>`:''}</li>`).join(''):'<li class="muted">Moves will appear here.</li>';
 }
 
 boardEl.addEventListener('click',e=>{const b=e.target.closest('[data-pit]');if(b)clickPit(+b.dataset.pit);});
