@@ -188,7 +188,7 @@ details summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px
           <summary>New game</summary>
           <form class="setup" id="setup">
             <label for="nbots">Bots
-              <select id="nbots"><option value="1">1 bot</option><option value="2" selected>2 bots</option><option value="3">3 bots</option></select>
+              <select id="nbots"><option value="1" selected>1 bot</option><option value="2">2 bots</option><option value="3">3 bots</option></select>
             </label>
             <label for="seat">You go
               <select id="seat"><option value="first">First</option><option value="random">Random seat</option><option value="last">Last</option></select>
@@ -549,7 +549,7 @@ speedEl.addEventListener('change',()=>{try{localStorage.setItem('murm-speed',spe
 
 function start(data){
   try{const sp=localStorage.getItem('murm-speed'); if(sp&&DELAYS[sp]) speedEl.value=sp;}catch(_){}
-  let st={nBots:2,seat:'first',yourName:'You'};
+  let st={nBots:1,seat:'first',yourName:'You'};
   try{const v=JSON.parse(localStorage.getItem('murm-setup')||'null'); if(v&&v.nBots) st=v;}catch(_){}
   document.getElementById('nbots').value=String(st.nBots); document.getElementById('seat').value=st.seat; document.getElementById('yourname').value=st.yourName;
   if(data&&data.S&&data.S.phase!=='bot'&&'tok' in data.S){S=data.S; gameId++; render(); if(S.players[S.cur].bot&&(S.phase==='pick'||S.phase==='place'))botTurn();}
