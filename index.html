@@ -166,7 +166,7 @@ details summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px
   <header>
     <h1>Murmuration</h1>
     <span class="flock" aria-hidden="true"><i class="blue" style="margin-bottom:10px"></i><i class="red" style="margin-bottom:4px"></i><i class="white" style="margin-bottom:12px;box-shadow:0 0 0 1px var(--s-white-edge)"></i><i class="green" style="margin-bottom:6px"></i></span>
-    <span class="tag">8 eyes · 24 gems · 36 irises · first to 3 irises of one color</span>
+    <span class="tag" id="goaltag">8 eyes · 24 gems · 36 irises · first to 3 irises of one color</span>
   </header>
   <div class="layout">
     <div>
@@ -193,6 +193,9 @@ details summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px
             <label for="seat">You go
               <select id="seat"><option value="first">First</option><option value="random">Random seat</option><option value="last">Last</option></select>
             </label>
+            <label for="goal">Win by
+              <select id="goal"><option value="three">3 irises of one color</option><option value="pairs">3 pairs of different colors</option></select>
+            </label>
             <label for="yourname">Your name
               <input id="yourname" value="You" maxlength="16">
             </label>
@@ -212,7 +215,7 @@ details summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px
       <section class="panel rules">
         <details>
           <summary>Rules</summary>
-          <p><b>Goal:</b> be the first player to collect 3 irises of the same color.</p>
+          <p id="goalrule"><b>Goal:</b> be the first player to collect 3 irises of the same color.</p>
           <ol>
             <li><b>Opening.</b> On the first player's first turn, they only place the loupe on any eye. Play then passes clockwise.</li>
             <li><b>Pick up.</b> Take all the gems from a valid eye. A <b>valid eye</b> is any eye within 2 of the loupe that has gems in it. The eye's iris stays where it is.</li>
@@ -234,6 +237,11 @@ const COLORS=['blue','red','white','green'];
 const CAP={blue:'Turquoise',red:"Tiger's eye",white:'Moonstone',green:'Malachite'};
 const LOW={blue:'turquoise',red:"tiger's eye",white:'moonstone',green:'malachite'};
 const NP=8, GOAL=3, WIN=1000, REACH=2;
+const isPairs=()=>!!(S&&S.settings&&S.settings.goal==='pairs');
+const pairCount=h=>COLORS.filter(c=>h[c]>=2).length;
+const hasWon=h=>isPairs()? pairCount(h)>=3 : COLORS.some(c=>h[c]>=GOAL);
+const GOALTEXT={three:{tag:'first to 3 irises of one color',rule:'be the first player to collect 3 irises of the same color.'},
+  pairs:{tag:'first to 3 pairs of different colors',rule:'be the first player to collect 3 pairs of irises, each pair a different color (for example, 2 turquoise, 2 malachite and 2 moonstone).'}};
 const BIRD_SVG='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="none" stroke="#1b1608" stroke-width="2.6"/><path d="M14.5 14.5L21 21" stroke="#1b1608" stroke-width="3" stroke-linecap="round"/></svg>';
 const BIRDS=['Opal','Jasper','Beryl','Garnet','Topaz','Onyx','Agate','Coral','Jade','Amber'];
 const ARCH=[
@@ -261,7 +269,7 @@ function makeStyle(a){
   return {label:a.label,desc:a.desc,greed:jit(a.greed,.2),defense:jit(a.defense,.25),k:a.k,
           blunder:Math.min(.45,jit(a.blunder,.5)),focus:jit(a.focus,.3),all:a.all};
 }
-function newGame(nBots,seat,yourName){
+function newGame(nBots,seat,yourName,goal){
   const cards=shuffle(COLORS.flatMap(c=>Array(9).fill(c)));
   const stones=shuffle(COLORS.flatMap(c=>Array(6).fill(c)));
   const pits=Array.from({length:NP},()=>{const s=zero();for(let i=0;i<3;i++)s[stones.pop()]++;return {card:cards.pop(),s};});
@@ -270,7 +278,7 @@ function newGame(nBots,seat,yourName){
   const me={name:yourName||'You',bot:false,cards:zero()};
   const at= seat==='first'?0 : seat==='last'?nBots : rnd(nBots+1);
   bots.splice(at,0,me);
-  S={pits,pile:cards,players:bots,cur:0,phase:'place',tok:null,turn:null,log:[],winner:null,anim:null,last:null,settings:{nBots,seat,yourName}};
+  S={pits,pile:cards,players:bots,cur:0,phase:'place',tok:null,turn:null,log:[],winner:null,anim:null,last:null,settings:{nBots,seat,yourName,goal:goal==='pairs'?'pairs':'three'}};
   gameId++;
 }
 
@@ -315,7 +323,7 @@ function resolve(pi,origin,land,choicePit,info){
     text=`${p.name} took the ${LOW[take.col]} iris from ${where}.`; cls='took';
     if(wins.length===2) det.push(`Both irises qualified; ${p.name} chose the ${LOW[take.col]} iris from eye ${take.pit+1}.`);
     det.push(drawn?`Drew a ${LOW[drawn]} iris into eye ${take.pit+1}. ${S.pile.length} left in the pile.`:`The pile is empty, so eye ${take.pit+1} has no iris now.`);
-    if(p.cards[take.col]>=GOAL){S.winner=pi;S.phase='over';text=`${p.name} wins with three ${LOW[take.col]} irises.`;cls='win';}
+    if(hasWon(p.cards)){S.winner=pi;S.phase='over';text=isPairs()?`${p.name} wins with pairs of ${COLORS.filter(c=>p.cards[c]>=2).map(c=>LOW[c]).join(', ')}.`:`${p.name} wins with three ${LOW[take.col]} irises.`;cls='win';}
   } else {
     text=`${p.name} sowed from eye ${origin+1} to eye ${land+1} and won no iris.`;
   }
@@ -341,7 +349,9 @@ function advance(){
 
 /* ---------- bot brain ---------- */
 const copyB=b=>b.map(x=>({...x}));
-const cardValue=(hand,col,focus)=>hand[col]+1>=GOAL?WIN:1+focus*hand[col];
+const cardValue=(hand,col,focus)=>{const h2={...hand};h2[col]++; if(hasWon(h2)) return WIN;
+  if(isPairs()) return 1+(hand[col]===1?1.0:hand[col]===0?0.45:0.05)*(0.6+0.4*focus);
+  return 1+focus*hand[col];};
 // best card the player holding `hand` could win next turn, starling on `tok`
 function replyValue(b,cards,hand,tok){
   let best=0;
@@ -446,6 +456,7 @@ function endTurn(choicePit){const t=S.turn;resolve(S.cur,t.origin,t.placed[t.pla
 const boardEl=document.getElementById('board'),turnEl=document.getElementById('turn'),playersEl=document.getElementById('players'),logEl=document.getElementById('log'),speedEl=document.getElementById('speed');
 const R=37;
 function render(){
+  {const g=GOALTEXT[isPairs()?'pairs':'three']; const gt=document.getElementById('goaltag'); if(gt) gt.textContent='8 eyes · 24 gems · 36 irises · '+g.tag; const gr=document.getElementById('goalrule'); if(gr) gr.innerHTML='<b>Goal:</b> '+esc(g.rule);}
   const human=!S.players[S.cur].bot, t=S.turn, a=S.anim;
   let target=null,landed=null,origin=null;
   if(S.phase==='sow'&&t){origin=t.origin; if(handTotal())target=nextTarget(); else landed=t.placed[t.placed.length-1].p;}
@@ -521,7 +532,7 @@ function render(){
 
   playersEl.innerHTML=S.players.map((p,i)=>`<div class="player ${i===S.cur&&S.phase!=='over'?'cur':''}">
     <div class="pname">${esc(p.name)}${p.bot?'':' <span class="muted" style="font-weight:400">(you)</span>'}</div>
-    <div class="tally" aria-label="${COLORS.map(c=>p.cards[c]+' '+LOW[c]).join(', ')}">${COLORS.map(c=>`<span class="t">${[0,1,2].map(k=>`<span class="slot ${k<p.cards[c]?'f '+c:''}"></span>`).join('')}</span>`).join('')}</div>
+    <div class="tally" aria-label="${COLORS.map(c=>p.cards[c]+' '+LOW[c]).join(', ')}">${COLORS.map(c=>`<span class="t">${Array.from({length:Math.max(isPairs()?2:3,p.cards[c])},(_,k)=>`<span class="slot ${k<p.cards[c]?'f '+c:''}"></span>`).join('')}</span>`).join('')}${isPairs()?`<span class="muted" style="font-size:12px;margin-left:6px">${pairCount(p.cards)}/3 pairs</span>`:''}</div>
     </div>`).join('');
 
   logEl.innerHTML=S.log.length?S.log.map(l=>`<li class="${l.cls}">${l.tn!=null?`<span class="tn">${l.tn?'Turn '+l.tn:'Opening'}</span>`:''}${esc(l.text)}${l.det&&l.det.length?`<ul class="det">${l.det.map(d=>d.startsWith('<ok>')?`<li class="ok">${esc(d.slice(4))}</li>`:`<li>${esc(d)}</li>`).join('')}</ul>`:''}</li>`).join(''):'<li class="muted">Moves will appear here.</li>';
@@ -536,12 +547,12 @@ turnEl.addEventListener('click',e=>{
   ({end:()=>endTurn(null),undo,cancel,again:()=>startGame(S.settings)})[act]();
 });
 function startGame(st){
-  newGame(st.nBots,st.seat,st.yourName); render();
+  newGame(st.nBots,st.seat,st.yourName,st.goal); render();
   if(S.players[S.cur].bot) botTurn();
 }
 document.getElementById('setup').addEventListener('submit',e=>{
   e.preventDefault();
-  const st={nBots:+document.getElementById('nbots').value,seat:document.getElementById('seat').value,yourName:document.getElementById('yourname').value.trim()||'You'};
+  const st={nBots:+document.getElementById('nbots').value,seat:document.getElementById('seat').value,goal:document.getElementById('goal').value,yourName:document.getElementById('yourname').value.trim()||'You'};
   try{localStorage.setItem('murm-setup',JSON.stringify(st));}catch(_){}
   document.getElementById('newgame').open=false; startGame(st);
 });
@@ -549,9 +560,9 @@ speedEl.addEventListener('change',()=>{try{localStorage.setItem('murm-speed',spe
 
 function start(data){
   try{const sp=localStorage.getItem('murm-speed'); if(sp&&DELAYS[sp]) speedEl.value=sp;}catch(_){}
-  let st={nBots:1,seat:'first',yourName:'You'};
+  let st={nBots:1,seat:'first',goal:'three',yourName:'You'};
   try{const v=JSON.parse(localStorage.getItem('murm-setup')||'null'); if(v&&v.nBots) st=v;}catch(_){}
-  document.getElementById('nbots').value=String(st.nBots); document.getElementById('seat').value=st.seat; document.getElementById('yourname').value=st.yourName;
+  document.getElementById('nbots').value=String(st.nBots); document.getElementById('seat').value=st.seat; document.getElementById('yourname').value=st.yourName; document.getElementById('goal').value=st.goal==='pairs'?'pairs':'three';
   if(data&&data.S&&data.S.phase!=='bot'&&'tok' in data.S){S=data.S; gameId++; render(); if(S.players[S.cur].bot&&(S.phase==='pick'||S.phase==='place'))botTurn();}
   else startGame(st);
 }

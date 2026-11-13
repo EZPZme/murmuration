@@ -25,6 +25,10 @@ It runs in any modern browser, on desktop or phone. You play against 1 to 3 comp
 
 If the pile runs out, an eye whose iris is taken stays empty. If no irises remain on the board, the game is a draw.
 
+### Variant: three pairs
+
+Everything is the same except the goal: be the first player to collect **3 pairs of irises, each pair a different color** (for example, 2 turquoise, 2 malachite and 2 moonstone). Games run longer, and you'll often take an iris you don't need just to keep it from an opponent. Choose it under **New game → Win by**.
+
 ## Files
 
 - `index.html` — the complete playable game (artwork is built in; nothing else is needed).
